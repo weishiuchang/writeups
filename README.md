@@ -1,2 +1,1 @@
-# writeups
-How-to's and Write-Ups
+# How-to's, Write-Ups, and Guides
