@@ -334,7 +334,7 @@ service:
   type: LoadBalancer
 ```
 
-Of note here is that the dex service is listening on 443, which Traefik 1.7 cannot handle as a backend which is why we are using metallb to expose it externally to the cluster. *But*, this does mean that we need to be able to reach `dex.auth-system.svc.cluster.local` from our browser and from within the cluster. This easily solved by putting the IP of the services into our host `/etc/hosts` file:
+Of note here is that the dex service is listening on 443, which Traefik 1.7 cannot handle as a backend which is why we are using Metallb to expose it externally to the cluster. *But*, this does mean that we need to be able to reach `dex.auth-system.svc.cluster.local` from our browser and from within the cluster. This is hackishly solved by putting the IP of the services into our host `/etc/hosts` file:
 
 ```bash
 kubectl -n auth-system get services dex
@@ -348,7 +348,7 @@ dex    LoadBalancer   10.43.8.80   172.18.100.1   443:32565/TCP   35s
 172.18.100.1 dex.auth-system.svc.cluster.local
 ```
 
-Now verify the discovery url returns valid json `curl -k https://dex.auth-system.svc.cluster.local/.well-known/openid-configuration`
+Now verify the discovery url returns a good json: `curl -k https://dex.auth-system.svc.cluster.local/.well-known/openid-configuration`
 
 ## Deploy external-auth-server
 Let's clone the `external-auth-server` repository as we will need to generate a configuration token using the provided nodejs script:
@@ -361,7 +361,7 @@ vim external-auth-server/bin/generate-config-token.js
 // ./external-auth-server/bin/generate-config-token.js
 eas: {
   plugins: [
-    // copy and paste oidc section in external-auth-server/PLUGINS.md
+    // copy and paste the oidc section from external-auth-server/PLUGINS.md
     {
       type: "oidc",
       issuer: {
@@ -405,7 +405,7 @@ EAS_CONFIG_TOKEN_ENCRYPT_SECRET=`openssl rand -base64 6`
 docker run -it --rm -e EAS_CONFIG_TOKEN_SIGN_SECRET=$EAS_CONFIG_TOKEN_SIGN_SECRET -e EAS_CONFIG_TOKEN_ENCRYPT_SECRET=$EAS_CONFIG_TOKEN_ENCRYPT_SECRET -v $PWD/external-auth-server/bin/generate-config-token.js:/home/eas/app/bin/generate-config-token.js travisghansen/external-auth-server node bin/generate-config-token.js
 ```
 
-This should print out two outputs. We only need the first one - `encrypted token` for server-side usage. Copy and paste the entire token and place it in values.yaml:
+This should print out two outputs. We only need the first one - `encrypted token` for server-side usage. Copy and paste the entire token and place it in values.yaml as a `configTokens`:
 ```bash
 # helm upgrade --install --atomic --debug --force -f ./values.yaml -n auth-system external-auth-server external-auth-server/charts/external-auth-server/
 ```
@@ -433,11 +433,11 @@ configTokenStores:
       cache_ttl: 3600
       var: EAS_CONFIG_TOKENS
 
-# copy the server-side encrypted token you generated above to here
+# copy outputted server-side encrypted token created by bin/generate-config-token.js
 configTokens:
   1: rzL49fQK8Dm9w8JO98qM1QLJ7aApDK0p1CmJ1LwQ+QWgEg0dZjF8smeHtbvtk/PMQrUSraqWXNq9/k1rEzpjUhVhBQQrQA/bv0+OF/9wlInziSbAZ8X6s2w2qpCKnsY97GFkGNOosi9AkjIS3wakKD0XxhYAUTbTjlXRq4ycqlwXR6xcMRyM3pYR0BEyCHDRlq3jvor5AFL9wLK0/noU71l5+/I61AYUSbxz0ZMRNZHjlhD0xfea01Dr6yPDUBitFbQfq3u2WfebrtS4BmpHlNnucRo60YTSR7KCj23uk5t2EG15xpk5OqHh99KanWjs0DXmusv3BjcgyQq/vIK3vIaxR5e6L1OBLKfDyUBsTBuVZm9bub3BbYo/x74rUh0L5G9HvDcXLUnlfNK2x2UvG1BLP2Q7H+XrFqElj/zE5EQ1CMFHnHEZDT84FQaFq2RitphlVNZ9k5SFYu2+5xj0QhqcE3+2uCb97r/GMz0zgwngu0Oc/wbF/26w0siiOVefQSgZd7wbtDJJiWHYPo4LTZmNndLgHvQjjdJezFI5777YXDZ30loi/qN2b0FPEmfCGZaAhXc4PlRUnpkNGZegaDJ2ggEBjqvIbXA+ecpveBY57qx06jDXLZeiLv6T1sBrneOFeX4jN9RzezRvSMiri6EbnIXT079ypi+9RdRmaVhu3BUIkAoB2HW7vgwu6BLTCh3ivebRD8xixayqHBN/JrQrNc68CZklOmTFFlsaDaZ1Z2WayDHQtD+LVmrl+LFc0o+Lr4oQl/Pb4PbIHfMyZrWmCVr6KAmlkVpes00zNHgh8ImYKs3zwuj4HjPyVRkjZlhwF0zbkHcNyFl72I1HGkHie6LrHF9AQCegt3bz4AMO3wyieG6E1ENFHFq9bMM11cJ+6k9VUerWSW9Ft7+1ofH/Nzfu7WpI1GnlcNNURRk684rGP+pxip+aMJhppdmVE7F/GllzvG88ShuEOIJ75br4jG5yS7Mp+hsBXK+FRxGwQUUwjI6A8JJ2PDj7jRnesT4PMQ/TCNJl9yN/ldcF+xOb0j6bSUWXfsbQEMqigWYMT3kanMuAH2Bw4iHEJrCUDzFBOtok+LQjQwVvf1QEoGI64gLFtQ4ZlRKiLHZCMoYnRuU1NIRvKi4Cj3C/TZR8OZmn2Q2ni18g1jGtDWLM07iYf0xTiCbWty+LETP1kRTDvrS2qGGEkTBJ6X7PDcCI93TToFiMe9UnYD1FyAILgEEQ3Idz8cahAX5cdVLDd+6MGltav4T8W9bRvXKE6cNxPQTPHVSu7xXjPRuyxDmOqSEoe2UExhR3QYnnNFH3f7mVCXnD5o1Gkmn53D5Sc9husEAKa/A6oAHLcXxn7qUDvnI1L3o+GyNDRKhJTvoIMTx1p61fPO8TU9GgoT/by757a55LkakjZDsGZIarxSzqH8EUnXDHWzT58eePUR7sfao/fpUzyu/WPk6bHDni/tRTk2F43qlUVLRgixYwDGHxtg==
 
-# this should be the contents of /data/certs/fireflyclass.com.crt
+# this should be the plain contents of /data/certs/fireflyclass.com.crt
 nodeExtraCaCerts: |-
   -----BEGIN CERTIFICATE-----
   MIIEBTCCAu2gAwIBAgIJAOMKQ9GM2CvZMA0GCSqGSIb3DQEBCwUAMF4xCzAJBgNV
@@ -453,7 +453,7 @@ ingress:
     - eas.fireflyclass.com
 ```
 
-Note `https://eas.fireflyclass.com` is exposed through our Traefik ingress controller, which simply takes the [direct redirect return from Dex][https://github.com/dexidp/dex/issues/448] (via a GET request parameter) to give us a `wildcard` redirect capability. Of course, for this to work for our browser, we should add yet another entry to our `/etc/hosts` so our host can lookup the hostname:
+Note `https://eas.fireflyclass.com` is exposed through our Traefik ingress controller, which simply takes the [direct redirect return from Dex](https://github.com/dexidp/dex/issues/448) (via a GET request parameter) to give us a `wildcard` redirect capability. Of course, for this to work for our browser, we should add yet another entry to our `/etc/hosts` so our host can lookup the hostname:
 
 ```bash
 kubectl -n kube-system get services traefik
@@ -500,7 +500,7 @@ spec:
             path: /
 ```
 
-You should already have `dashboard.fireflyclass.com` added to `/etc/hosts` as per the end of external-auth-server section, but it's here again to re-enforce that we are exposing https://dashboard.fireflyclass.com through our Traefik Ingress.
+You should already have `dashboard.fireflyclass.com` added to `/etc/hosts` as per the end of external-auth-server section, but here it is again to re-enforce that we are exposing `https://dashboard.fireflyclass.com` through our Traefik Ingress.
 
 ```bash
 kubectl -n kube-system get services traefik
@@ -569,7 +569,7 @@ subjects:
 # Bonus configuration
 With glauth and Dex in place, we can deploy [dex-k8s-authenticator](https://github.com/mintel/dex-k8s-authenticator) to provide `kubeconfig` oauth tokens to our users. This creates an ingress for `https://kubectl.fireflyclass.com` for our users.
 
-This will require a small change to Dex's deployment, the addition of a redirect url:
+As we won't be using external-auth-server proxy for dex-k8s-authenticator, this will require a small change to Dex's deployment: The addition of a redirect url:
 ```yaml
 # dex's values.yaml
 ---
@@ -612,8 +612,8 @@ dexK8sAuthenticator:
 caCerts:
   enabled: true
   secrets:
-  - name: apiserver-cert
-    filename: apiserver.crt
+  - name: kube-apiserver-cert
+    filename: kube-apiserver.crt
     # echo | openssl s_client -connect localhost:6443 2>/dev/null | openssl x509 | base64 -w0
     value: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJ6RENDQVhLZ0F3SUJBZ0lJTWExZzdiS1JZMGd3Q2dZSUtvWkl6ajBFQXdJd0l6RWhNQjhHQTFVRUF3d1kKYXpOekxYTmxjblpsY2kxallVQXhOVGcyTURJeE5USTNNQjRYRFRJd01EUXdOREUzTXpJd04xb1hEVEl4TURRdwpOREUzTXpJd09Gb3dIREVNTUFvR0ExVUVDaE1EYXpOek1Rd3dDZ1lEVlFRREV3TnJNM013V1RBVEJnY3Foa2pPClBRSUJCZ2dxaGtqT1BRTUJCd05DQUFUK1ZONjJ3Y1FsVjBXVm5HWEk5TVhHZ0c3cjUyeVpxVjBtTVBZNlpaOEsKS041NmdQS3pHZVZ4K2xIVFBlL2tkREtTbWpzYW1wYjRxNTdtMGdza3IwK0JvNEdXTUlHVE1BNEdBMVVkRHdFQgovd1FFQXdJRm9EQVRCZ05WSFNVRUREQUtCZ2dyQmdFRkJRY0RBVEJzQmdOVkhSRUVaVEJqZ2dwcmRXSmxjbTVsCmRHVnpnaEpyZFdKbGNtNWxkR1Z6TG1SbFptRjFiSFNDSkd0MVltVnlibVYwWlhNdVpHVm1ZWFZzZEM1emRtTXUKWTJ4MWMzUmxjaTVzYjJOaGJJSUpiRzlqWVd4b2IzTjBod1FLS3dBQmh3Ui9BQUFCaHdTc0VnQUNNQW9HQ0NxRwpTTTQ5QkFNQ0EwZ0FNRVVDSUZZZFN1MDNwb1crTEtMOXBRSG1lRWhGUGtYZ1JXUUZ2dlRLVHo0Rk0wcUlBaUVBCnF1VFV3MmhjWWU0V3RLbUE1SE16SjBBVldKL01EbXI3dHRJYnJUOFhacEk9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
   - name: dex-cert
