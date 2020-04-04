@@ -82,7 +82,7 @@ Before we can start k3d, we unfortunately need to edit our `/etc/resolv.conf` wi
 vim /etc/resolv.conf
 
 ...
-nameserver 1.43.0.10
+nameserver 10.43.0.10
 ...
 ```
 
