@@ -1,4 +1,4 @@
-![dashboard with oauth](images/dashboard-oauth.png)
+![dashboard with oauth](images/dashboard-oauth.svg)
 
 * [docker-ce 19.03.5](https://docs.docker.com/install/linux/docker-ce/fedora/)
 * [k3d v1.7.0](https://github.com/rancher/k3d)
