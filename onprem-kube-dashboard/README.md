@@ -37,7 +37,7 @@ We're going to:
 * kubectl
 
 ## Create a self-signed wildcard cert
-kube-apiserver has a baked in requirement that it must use an http**s** in its `--oidc-issuer-url` argument. We must therefore setup Dex with a LoadBalancerIP in addition to a TLS certificate, so we'll use OpenSSL to generate a self-signed cert for dex.auth-system.svc.cluster.local that will also serve double duty in our Traefik wildcard domain `*.fireflyclass.com`:
+kube-apiserver has a baked in requirement that it must use an http**s** in its `--oidc-issuer-url` argument. We must therefore setup Dex with a LoadBalancerIP in addition to a TLS certificate, so we'll use OpenSSL to generate a self-signed cert for dex.auth-system.svc.cluster.local that will also serve double duty in our Traefik wildcard domain `*.fireflyclass.com`. This is not required but it does make this guide easier to document if we just worked with one cert:
 
 ```bash
 cat >/data/certs/san.conf<<EOF
@@ -75,10 +75,10 @@ openssl req -newkey rsa:2048 -config /data/certs/san.conf -extensions v3_req -no
 
 Note the required `keyUsage = keyCertSign` as I found out that if you leave it off, then it is not a valid CA and will be [ignored by nodejs](https://github.com/travisghansen/external-auth-server/issues/70) in external-auth-server.
 
-Also, note the SAN for `dex.auth-system.svc.cluster.local`: If I had a real DNS server then I would have used something that is addressable by services within Kubernetes and without, something like dex.fireflyclass.com.
+Also, note the SAN for `dex.auth-system.svc.cluster.local`: If I had a *real* DNS server then I would have used something that is addressable by services within Kubernetes and without, something like `dex.fireflyclass.com`.
 
 ## Start k3d
-Before we can start k3d, we unfortunately need to edit our `/etc/resolv.conf` with a kludge that allow the created kube-apiserver's to be able to connect to the Dex hostname `dex.auth-system.svc.cluster.local`:
+Before we can start k3d, we unfortunately need to edit our `/etc/resolv.conf` with a kludge that allow the created kube-apiserver's to be able to resolve the Dex hostname `dex.auth-system.svc.cluster.local` for JWT. We do this kludge because k3d automagically mounts the host `/etc/resolv.conf` into the master-worker docker containers on start. You could of course, wait for the master-workers to start and then `docker exec` into each of them and edit `/etc/resolv.conf` individually, but this is easier:
 
 ```bash
 vim /etc/resolv.conf
@@ -100,7 +100,7 @@ k3d get-kubeconfig
 ```
 
 ## Update Traefik with our wildcard cert
-Update the TLS secret in our running Traefik with our fireflyclass.com.crt and fireflyclass.com.key. Make sure to replace the strings with the base64 encodings:
+Update the TLS secret in our running Traefik with our fireflyclass.com.crt and fireflyclass.com.key. Make sure to replace the strings with their base64 encoding:
 
 ```bash
 base64 -w0 /data/certs/fireflyclass.com.crt
@@ -109,7 +109,7 @@ kubectl edit -n kube-system secret traefik-default-cert
 ```
 
 ## Deploy glauth with users
-Create an LDAP server with a couple of users we're going to use to test our Kubernetes Dashboard. Specifically, the accounts in the `admins` group will be given cluster-admin roles while accounts in the `devops` group will be given admin privileges to just the `devops` namespace in Kubernetes. We will also create a service account for Dex to bind (required).
+Create an LDAP server with a couple of users we're going to use to test our Kubernetes Dashboard. Specifically, the accounts in the `admins` group will be given `cluster-admin` roles while accounts in the `devops` group will be given `admin` privileges to just the `devops` namespace in Kubernetes. We will also create a service account for Dex to bind (required).
 
 Use the following commands to generate sha256 passwords (note the required `-n` to `echo`):
 ```bash
@@ -252,7 +252,7 @@ spec:
 ```
 
 ## Deploy metallb with reachable IPs
-k3d is just Kubernetes running in a Docker network on a host. We need to allocate IPs that are within the same `/16` subnet as the Kubernetes nodes for metallb to hand out LoadBalancerIPs that are reachable by both pods and your browser (via docker0). Get the subnet to put into metallb with the `get nodes` command:
+k3d is just Kubernetes running in a Docker network on your host. We need to allocate IPs that are within the same `/16` subnet as the Kubernetes nodes for metallb to hand out LoadBalancerIPs that are reachable by both k8s pods and your browser (via docker0). Get the subnet to put into metallb with the `get nodes` command:
 ```bash
 kubectl get nodes -o wide
 
@@ -336,7 +336,7 @@ service:
   type: LoadBalancer
 ```
 
-Of note here is that the dex service is listening on 443, which Traefik 1.7 cannot handle as a backend which is why we are using Metallb to expose it externally to the cluster. *But*, this does mean that we need to be able to reach `dex.auth-system.svc.cluster.local` from our browser and from within the cluster. This is hackishly solved by putting the IP of the services into our host `/etc/hosts` file:
+Of note here is that the dex service is listening on 443 in the cluster, which Traefik 1.7 cannot handle as a backend which is why we are using Metallb to expose it externally to the cluster. *But*, this does mean that we need to be able to reach `dex.auth-system.svc.cluster.local` from our host/browser and from other pods in the cluster. This is hackishly solved by putting the IP of the services into our host `/etc/hosts` file:
 
 ```bash
 kubectl -n auth-system get services dex
@@ -346,7 +346,7 @@ dex    LoadBalancer   10.43.8.80   172.18.100.1   443:32565/TCP   35s
 ```
 
 ```
-# /etc/hosts
+# vim /etc/hosts
 172.18.100.1 dex.auth-system.svc.cluster.local
 ```
 
@@ -400,7 +400,7 @@ eas: {
   ],
 ```
 
-Now generate a couple of random secrets for `EAS_CONFIG_TOKEN_SIGN_SECRET` and `EAS_CONFIG_TOKEN_ENCRYPT_SECRET` and run external-auth-server/bin/generate-config-token.js to get the encrypted output. Make sure to save the generated tokens for values.yaml as they are needed for decrypting:
+Now generate a couple of random characters for `EAS_CONFIG_TOKEN_SIGN_SECRET` and `EAS_CONFIG_TOKEN_ENCRYPT_SECRET` and run external-auth-server/bin/generate-config-token.js to get the encrypted output. Make sure to save the random characters for values.yaml as they are needed for decrypting:
 ```bash
 EAS_CONFIG_TOKEN_SIGN_SECRET=`openssl rand -base64 6`
 EAS_CONFIG_TOKEN_ENCRYPT_SECRET=`openssl rand -base64 6`
@@ -420,11 +420,13 @@ logLevel: "debug"
 # each of these secrets must be unique and distinct
 configTokenSignSecret: <this from $EAS_CONFIG_TOKEN_SIGN_SECRET above>
 configTokenEncryptSecret: <this is from $EAS_CONFIG_TOKEN_ENCRYPT_SECRET above>
-issuerSignSecret: <random stuff from `openssl rand -base64 6`>
-issuerEncryptSecret: <another random stuff from `openssl rand -base64 6`>
-cookieSignSecret: <another random stuff from `openssl rand -base64 6`>
-cookieEncryptSecret: <another random stuff from `openssl rand -base64 6`>
-sessionEncryptSecret: <another random stuff from `openssl rand -base64 6`>
+
+# create some random characters from `openssl rand -base64 6`
+issuerSignSecret: 7eN8RyNr
+issuerEncryptSecret: J8OXg8i2
+cookieSignSecret: lnIGI2il
+cookieEncryptSecret: U7j6TQ3I
+sessionEncryptSecret: KOIpmznE
 storeOpts: {}
 revokedJtis: []
 
@@ -455,7 +457,7 @@ ingress:
     - eas.fireflyclass.com
 ```
 
-Note `https://eas.fireflyclass.com` is exposed through our Traefik ingress controller, which simply takes the [direct redirect return from Dex](https://github.com/dexidp/dex/issues/448) (via a GET request parameter) to give us a `wildcard` redirect capability. Of course, for this to work for our browser, we should add yet another entry to our `/etc/hosts` so our host can lookup the hostname:
+Note `https://eas.fireflyclass.com` is exposed through our Traefik ingress controller, which simply takes the [direct redirect return from Dex](https://github.com/dexidp/dex/issues/448) (via a GET request parameter) to give us a `wildcard` redirect capability, which is super convenient if we want to use this oauth proxy for more than just the Kubernetes Dashboard. Of course, for this to work for our browser, we should add yet another entry to our `/etc/hosts` so our host can lookup the hostname since we're not running our own DNS server:
 
 ```bash
 kubectl -n kube-system get services traefik
@@ -539,7 +541,7 @@ subjects:
   name: admins
 ```
 
-Now create a `devops` namespace and grant users in the `devops` group full permission to only that namespace:
+Now create a `devops` namespace and grant users in the `devops` group full permission to that namespace:
 
 ```bash
 kubectl apply -f ./devops-group.yaml
