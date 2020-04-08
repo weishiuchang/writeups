@@ -37,7 +37,7 @@ We're going to:
 * kubectl
 
 ## Create a self-signed wildcard cert
-kube-apiserver has a baked in requirement that it must use an http**s** in its `--oidc-issuer-url` argument. We must therefore setup Dex with a LoadBalancerIP in addition to a TLS certificate, so we'll use OpenSSL to generate a self-signed cert for dex.auth-system.svc.cluster.local that will also serve double duty in our Traefik wildcard domain `*.fireflyclass.com`. This is not required but it does make this guide easier to document if we just worked with one cert:
+kube-apiserver has a baked in requirement that it must use an http**s** in its `--oidc-issuer-url` argument. We must therefore setup Dex with a LoadBalancerIP in addition to a TLS certificate, so we'll use OpenSSL to generate a self-signed cert for dex.auth-system.svc.cluster.local that will also serve double duty in our Traefik wildcard domain `*.fireflyclass.com`. Using a single combined cert is not required but it does make this guide easier to document if we just worked with one certificate:
 
 ```bash
 cat >/data/certs/san.conf<<EOF
@@ -75,10 +75,10 @@ openssl req -newkey rsa:2048 -config /data/certs/san.conf -extensions v3_req -no
 
 Note the required `keyUsage = keyCertSign` as I found out that if you leave it off, then it is not a valid CA and will be [ignored by nodejs](https://github.com/travisghansen/external-auth-server/issues/70) in external-auth-server.
 
-Also, note the SAN for `dex.auth-system.svc.cluster.local`: If I had a *real* DNS server then I would have used something that is addressable by services within Kubernetes and without, something like `dex.fireflyclass.com`.
+Also, note the *S*ubject *A*lternative *N*ame of `dex.auth-system.svc.cluster.local`: If I had a *real* DNS server then I would have used something that is addressable by services within Kubernetes and without, something like `dex.fireflyclass.com`.
 
 ## Start k3d
-Before we can start k3d, we unfortunately need to edit our `/etc/resolv.conf` with a kludge that allow the created kube-apiserver's to be able to resolve the Dex hostname `dex.auth-system.svc.cluster.local` for JWT. We do this kludge because k3d automagically mounts the host `/etc/resolv.conf` into the master-worker docker containers on start. You could of course, wait for the master-workers to start and then `docker exec` into each of them and edit `/etc/resolv.conf` individually, but this is easier:
+Before we can start k3d, we unfortunately need to edit our `/etc/resolv.conf` with a kludge that allow the created kube-apiservers to be able to resolve the Dex hostname `dex.auth-system.svc.cluster.local` for JWT. We do this kludge because k3d automagically mounts the host `/etc/resolv.conf` into the master-worker docker containers on start. You could of course, wait for the master-workers to start and then `docker exec` into each of them and edit `/etc/resolv.conf` individually, but this is easier:
 
 ```bash
 vim /etc/resolv.conf
@@ -100,7 +100,7 @@ k3d get-kubeconfig
 ```
 
 ## Update Traefik with our wildcard cert
-Update the TLS secret in our running Traefik with our fireflyclass.com.crt and fireflyclass.com.key. Make sure to replace the strings with their base64 encoding:
+Update the TLS secret in our running Traefik with our fireflyclass.com.crt and fireflyclass.com.key. Make sure to use the base64 encoding for the secrets:
 
 ```bash
 base64 -w0 /data/certs/fireflyclass.com.crt
@@ -262,7 +262,7 @@ k3d-k3s-default-worker-1   Ready    <none>   41s   v1.17.3+k3s1   172.18.0.4    
 k3d-k3s-default-server     Ready    master   40s   v1.17.3+k3s1   172.18.0.2    <none>        Unknown    5.4.17-200.fc31.x86_64   containerd://1.3.3-k3s1
 ```
 
-From the `INTERNAL-IP` column we will use `172.18.100.0/30`; As long as the range we pick is high enough that it won't collide with what Docker will allocate then we should be fine.
+From the `INTERNAL-IP` column I decided to use `172.18.100.0/30`; As long as the range we pick is both in Docker's `/16` and high enough that it won't collide with what Docker will allocate then we should be fine.
 ```bash
 helm upgrade --install --atomic --debug --force -f ./values.yaml -n kube-system metallb stable/metallb
 ```
@@ -336,7 +336,7 @@ service:
   type: LoadBalancer
 ```
 
-Of note here is that the dex service is listening on 443 in the cluster, which Traefik 1.7 cannot handle as a backend which is why we are using Metallb to expose it externally to the cluster. *But*, this does mean that we need to be able to reach `dex.auth-system.svc.cluster.local` from our host/browser and from other pods in the cluster. This is hackishly solved by putting the IP of the services into our host `/etc/hosts` file:
+Of note here is that the dex service is listening on 443 in the cluster, which Traefik 1.7 cannot handle as a backend which is why we are using Metallb to expose it externally to the cluster. *But*, this does mean that we need to be able to reach `dex.auth-system.svc.cluster.local` from our host/browser and from other pods in the cluster as the user browser will be redirected to it for a login prompt. This is solved by putting the LoadBalancedIP of the service into our host `/etc/hosts` file:
 
 ```bash
 kubectl -n auth-system get services dex
@@ -400,14 +400,14 @@ eas: {
   ],
 ```
 
-Now generate a couple of random characters for `EAS_CONFIG_TOKEN_SIGN_SECRET` and `EAS_CONFIG_TOKEN_ENCRYPT_SECRET` and run external-auth-server/bin/generate-config-token.js to get the encrypted output. Make sure to save the random characters for values.yaml as they are needed for decrypting:
+Now generate a couple of random characters for `EAS_CONFIG_TOKEN_SIGN_SECRET` and `EAS_CONFIG_TOKEN_ENCRYPT_SECRET` and run external-auth-server/bin/generate-config-token.js to get the encrypted output. Make sure to save those random characters for values.yaml as they are needed for decrypting:
 ```bash
 EAS_CONFIG_TOKEN_SIGN_SECRET=`openssl rand -base64 6`
 EAS_CONFIG_TOKEN_ENCRYPT_SECRET=`openssl rand -base64 6`
 docker run -it --rm -e EAS_CONFIG_TOKEN_SIGN_SECRET=$EAS_CONFIG_TOKEN_SIGN_SECRET -e EAS_CONFIG_TOKEN_ENCRYPT_SECRET=$EAS_CONFIG_TOKEN_ENCRYPT_SECRET -v $PWD/external-auth-server/bin/generate-config-token.js:/home/eas/app/bin/generate-config-token.js travisghansen/external-auth-server node bin/generate-config-token.js
 ```
 
-This should print out two outputs. We only need the first one - `encrypted token` for server-side usage. Copy and paste the entire token and place it in values.yaml as a `configTokens`:
+This should print out two long strings. We only need the first one - `encrypted token` for server-side usage. Copy and paste the entire token and place it in values.yaml as a `configTokens`:
 ```bash
 # helm upgrade --install --atomic --debug --force -f ./values.yaml -n auth-system external-auth-server external-auth-server/charts/external-auth-server/
 ```
