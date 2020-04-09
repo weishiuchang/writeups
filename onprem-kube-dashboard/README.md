@@ -447,6 +447,9 @@ nodeExtraCaCerts: |-
   MIIEBTCCAu2gAwIBAgIJAOMKQ9GM2CvZMA0GCSqGSIb3DQEBCwUAMF4xCzAJBgNV
   ...
   -----END CERTIFICATE-----
+  
+securityContext:
+  enabled: true
 
 # required since dex does not allow wildcard redirect
 ingress:
