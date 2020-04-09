@@ -91,7 +91,7 @@ nameserver 10.43.0.10
 ```bash
 k3d create --volume /data/certs:/oidc                                                                   \
            --publish 443:443                                                                            \
-	   --no-deploy servicelb                                                                        \
+	   --server-arg --no-deploy=servicelb                                                           \
            --server-arg --kube-apiserver-arg=oidc-issuer-url=https://dex.auth-system.svc.cluster.local/ \
            --server-arg --kube-apiserver-arg=oidc-client-id=oidc-auth-client                            \
            --server-arg --kube-apiserver-arg=oidc-groups-claim=groups                                   \
