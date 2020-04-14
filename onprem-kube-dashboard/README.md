@@ -394,9 +394,23 @@ eas: {
         iss: true,
       },
       xhr: {},
-      cookie: {},
+      cookie: {
+        domain: "fireflyclass.com",
+      },
       custom_error_headers: {},
-      custom_service_headers: {},
+      custom_service_headers: {
+        // add support for Grafana SSO
+        "X-WebAuth-User": {
+          // userinfo, id_token, access_token, refresh_token, static, config_token, plugin_config, req, parentRequestInfo
+          source: "userinfo",
+          query_engine: "jp",
+          query: "$.name",
+          query_opts: {
+            // by default, a jsonpath query always returns a list (ie: array), this force the value to be the first value in the array
+            single_value: true
+          }
+        }
+      },
     },
   ],
 ```
@@ -448,7 +462,7 @@ nodeExtraCaCerts: |-
   MIIEBTCCAu2gAwIBAgIJAOMKQ9GM2CvZMA0GCSqGSIb3DQEBCwUAMF4xCzAJBgNV
   ...
   -----END CERTIFICATE-----
-  
+
 securityContext:
   enabled: true
 
@@ -615,7 +629,7 @@ dexK8sAuthenticator:
     issuer: https://dex.auth-system.svc.cluster.local/
     redirect_uri: https://kubectl.fireflyclass.com/callback/fireflyclass
     scopes: ["openid", "email", "profile", "groups"]
-    
+
     # k3d deployment has kube-apiserver listening on :6443
     k8s_master_uri: https://127.0.0.1:6443
     # echo | openssl s_client -connect localhost:6443 2>/dev/null | openssl x509
@@ -638,4 +652,25 @@ ingress:
   path: /
   hosts:
     - kubectl.fireflyclass.com
+```
+
+# Application Notes
+
+## Kubernetes Dashboard
+
+* Requires `Bearer` token in Header
+  - supported natively by external-auth-server
+  - thomseddon/traefik-forward-auth provides `Bearer` tokens for services accounts only
+
+## Grafana
+
+* Defaults to `username` or `email` in `X-WEBAUTH-USER`
+  - external-auth-server supports this via `custom_service_headers`
+  - in the ingress annotations, forward `X-WebAuth-User` but do not forward `Authorization`
+
+```yaml
+annotations:
+  ingress.kubernetes.io/auth-type: forward
+  ingress.kubernetes.io/auth-url: "http://external-auth-server.auth-system.svc.cluster.local/verify?config_token_store_id=primary&config_token_id=1"
+  ingress.kubernetes.io/auth-response-headers: X-WebAuth-User
 ```
