@@ -533,9 +533,7 @@ helm upgrade --install --atomic --debug --force -n monitoring fluent-bit loki/pr
 ```
 
 ## Install Prometheus and Grafana
-Prometheus provides two webpages: `https://prometheus.fireflyclass.com` and `https://alertmanager.fireflyclass.com`
-
-We're going to protect both using our oauth reverse proxy. We're not going to set any response headers since neither webpage cares about accounts.
+Prometheus provides two webpages: `https://prometheus.fireflyclass.com` and `https://alertmanager.fireflyclass.com`. We're going to protect both using our oauth reverse proxy. We're not going to set any response headers since neither webpage cares about accounts. We will also put Grafana on `https://monitoring.fireflyclass.com` protected behind our oauth2 proxy, external-auth-server, set to auto-create accounts with the `Admin` role.
 
 ```bash
 helm upgrade --install --atomic --debug --force -n monitoring -f ./prometheus-values.yaml prometheus-operator stable/prometheus-operator
@@ -544,9 +542,7 @@ helm upgrade --install --atomic --debug --force -n monitoring -f ./prometheus-va
 ```yaml
 # prometheus-values.yaml
 ---
-# we will install grafana manually with the latest stable/grafana chart
-grafana:
-  enabled: false
+adminPassword: plaintext-password-for-"admin"-login
 
 alertmanager:
   ingress:
@@ -565,69 +561,49 @@ prometheus:
       ingress.kubernetes.io/auth-url: "http://external-auth-server.auth-system.svc.cluster.local/verify?config_token_store_id=primary&config_token_id=1"
     hosts:
       - prometheus.fireflyclass.com
-```
 
-Now we're going to deploy grafana as plain http (port 80) in the cluster and use the Traefik Ingress Controller to terminate http**s** for us, and we will also use annotations to instruct Traefik 1.7 to forward authentication to our internal `http://external-auth-server.auth-system.svc.cluster.local` oauth proxy:
-
-```bash
-helm upgrade --install --atomic --debug --force -n monitoring -f ./grafana-values.yaml grafana stable/grafana
-```
-
-```yaml
-# grafana-values.yaml
----
-adminPassword: plaintext-password-for-"admin"-login
-
-# save dashboards and changes between pod restarts
-persistence:
-  enabled: true
-  accessModes:
-    - ReadWriteOnce
-  size: 10Gi
-
-grafana.ini:
-  users:
-    allow_sign_up: false
-    auto_assign_org: true
-    auto_assign_org_role: Admin
-  auth.proxy:
+grafana:
+  persistence:
     enabled: true
-    header_name: X-WEBAUTH-USER
-    header_property: username
-    headers: Groups:X-WEBAUTH-GROUPS
-    auto_sign_up: true
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
 
-ingress:
-  enabled: true
-  hosts:
-    - monitoring.fireflyclass.com
-  annotations:
-    ingress.kubernetes.io/auth-type: forward
-    ingress.kubernetes.io/auth-url: "http://external-auth-server.auth-system.svc.cluster.local/verify?config_token_store_id=primary&config_token_id=1"
-    ingress.kubernetes.io/auth-response-headers: X-WebAuth-user, X-WebAuth-groups
+  grafana.ini:
+    users:
+      allow_sign_up: false
+      auto_assign_org: true
+      auto_assign_org_role: Admin
+    auth.proxy:
+      enabled: true
+      header_name: X-WEBAUTH-USER
+      header_property: username
+      headers: Groups:X-WEBAUTH-GROUPS
+      auto_sign_up: true
 
-datasources:
-  datasources.yaml:
-    apiVersion: 1
-    datasources:
+  ingress:
+    enabled: true
+    hosts:
+      - monitoring.fireflyclass.com
+    annotations:
+      ingress.kubernetes.io/auth-type: forward
+      ingress.kubernetes.io/auth-url: "http://external-auth-server.auth-system.svc.cluster.local/verify?config_token_store_id=primary&config_token_id=1"
+      ingress.kubernetes.io/auth-response-headers: X-WebAuth-user, X-WebAuth-groups
+
+  additionalDataSources:
     - name: loki
       type: loki
       access: proxy
-      isDefault: true
       url: http://loki:3100
       editable: false
       jsonData:
         maxLines: 100000
-    - name: Prometheus
-      type: prometheus
-      url: http://prometheus-operator-prometheus:9000/
-      access: proxy
 
-testFramework:
-  enabled: false
+  testFramework:
+    enabled: false
 ```
 
-You should already have `monitoring.fireflyclass.com` added to `/etc/hosts` as per the end of external-auth-server section, but here it is again to re-enforce that we are exposing `https://monitoring.fireflyclass.com` through our Traefik Ingress.
+You should already have `monitoring.fireflyclass.com` added to `/etc/hosts` as per the end of external-auth-server section, but here it is again to re-enforce that we are exposing `https://monitoring.fireflyclass.com` through our Traefik Ingress with our poorman's dns.
 
 ```bash
 kubectl -n kube-system get services traefik
