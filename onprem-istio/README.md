@@ -317,7 +317,7 @@ spec:
 EOF
 ```
 
-I have been reliably [told](https://istio.io/docs/tasks/traffic-management/ingress/secure-ingress-sds/#configure-a-mutual-tls-ingress-gateway) that the cacert Secret must end in `-cacert`. Fair enough. Now let's modify our helloworld VirtualService to be accessible from our new TLS Gateway:
+I have been reliably [told](https://istio.io/docs/tasks/traffic-management/ingress/secure-ingress-sds/#configure-a-mutual-tls-ingress-gateway) that the CA Secret name must end in `-cacert`. Fair enough. Now let's modify our helloworld VirtualService to be accessible from our new TLS Gateway:
 
 ```bash
 # kubectl apply -f - <<EOF
@@ -340,7 +340,7 @@ spec:
 EOF
 ```
 
-The important bit here is the addition of our ingressgateway-tls to the list of Gateways. We should fail without trusting our CA, and of course succeed using our CA.
+The important bit here is the addition of our ingressgateway-tls to the list of Gateways. Curl should fail without trusting our CA, and succeed with our CA:
 
 ```bash
 # curl https://helloworld.fireflyclass.com
@@ -359,11 +359,11 @@ Version: 1.0.0
 Hostname: helloworld-7859b66cdf-v2wcc
 ```
 
-Wonderful! We have a TLS Ingress replacement of our Traefik Controller!
+Wonderful! We have a TLS Ingress replacement of our Traefik Controller! It's now cemented in our minds that VirtualService == Ingress.
 
 # Sidecars
 
-Now here's something interesting. We don't have sidecars in our helloworld pods.
+Now here's something interesting. We don't have [sidecars](https://istio.io/docs/reference/config/networking/sidecar/) in our helloworld pods.
 
 ```bash
 # kubectl get pods
@@ -371,4 +371,82 @@ NAME                          READY   STATUS    RESTARTS   AGE
 helloworld-7859b66cdf-v2wcc   1/1     Running   0          100m
 ```
 
-Containers is 1 of 1. Since we can access our Service without Istio [sidecards](https://istio.io/docs/reference/config/networking/sidecar/) that implies they actually serve some other purpose, perhaps related to [DestinationRules](https://istio.io/docs/reference/config/networking/destination-rule/)?
+Containers is 1 of 1. According to Istio docs this means that service is not part of the mesh network. **But!** It is still reachable! That's good, that allows us an avenue for migrating services into the cluster and more importantly a fall back if we absolutely must get the Service out of the mesh and working right away as part of troubleshooting.
+
+This was a *eureka* moment for me. I wondered why have a sidecar if Services still work with Gateways and VirtualServices, and it is because the sidecar allows us to now apply rules and policies like mTLS, traffic shaping, etc.
+
+Let us add our helloworld Deployment into the Istio mesh:
+
+```bash
+# istioctl kube-inject -f <(kubectl get deployment helloworld -o yaml) | kubectl apply -f -
+# kubectl get pods
+NAME                          READY   STATUS    RESTARTS   AGE
+helloworld-695c77f7bd-wptgw   2/2     Running   0          32s
+```
+
+The important bit here is the 2 of 2 containers in the pod, one of which is the injected sidecar from Istio.
+
+# mTLS
+
+Of all the features afforded by Istio mesh, what interest me next is the [auto mutual TLS feature](https://istio.io/pt-br/docs/tasks/security/authentication/auto-mtls/) for all sidecar-services. This seems like a natural extension of the TLS Ingress Gateway from earlier as it essentally turns all TCP connections between every Service into encrypted links.
+
+To keep us from having to create numerous DestinationRules, an automatic mTLS setting at the Istio level can create it all for us behind the scenes:
+
+```bash
+# istioctl manifest apply --set profile=demo --set values.global.mtls.auto=true --set values.global.mtls.enabled=false
+```
+
+This enables mtls in the cluster, but with a default policy of `permissive`. Which should mean both cleartext and TLS protected communications to our helloworld Service are allowed. And according to Istio [FAQ](https://istio.io/faq/security/#verify-mtls-encryption), we can check for encrypted links with tcpdump. Well, I won't go that far with this write up, but I will toggle our mesh default policy to *STRICT* mode so we get denied communications from other pods not in our mesh network. Oh! I also learned that policies are [applied](https://www.arctiq.ca/our-blog/2020/3/12/authentication-policy-and-auto-mtls-in-istio-1-5/) at the mesh level, at the namespace level, at the pod level, and at the port level, with the more specific levels winning.
+
+```bash
+# kubectl run curltest -it --rm --image infoblox/dnstools
+# curl http://helloworld.default.svc.cluster.local
+Hello, world!
+Version: 1.0.0
+Hostname: helloworld-695c77f7bd-wptgw
+```
+
+We can see that curl still works. Let's break it by setting a **STRICT** mTLS PeerAuthentication policy:
+
+```bash
+# kubectl apply -f - <<EOF
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: default
+spec:
+  mtls:
+    mode: STRICT
+EOF
+```
+
+Now let's see curl fail:
+
+```bash
+# kubectl run curltest -it --rm --image infoblox/dnstools
+# curl http://helloworld.default.svc.cluster.local
+curl: (56) Recv failure: Connection reset by peer
+```
+
+But just to make sure, external accesses via the Ingress Gateway should absolutely still work:
+
+```bash
+# curl --cacert temp/ca.crt https://helloworld.fireflyclass.com
+Hello, world!
+Version: 1.0.0
+Hostname: helloworld-695c77f7bd-wptgw
+```
+
+So now, how do we make sure our debugging pod gets an automatic sidecar? Apparently, by labeling our Default namespace with `istio-injection=enabled`:
+
+```bash
+# kubectl label namespace default istio-injection=enabled
+# kubectl run curltest -it --rm --image infoblox/dnstools
+# curl http://helloworld.default.svc.cluster.local
+Hello, world!
+Version: 1.0.0
+Hostname: helloworld-695c77f7bd-wptgw
+```
+
+Voilà! We have now enabled automatic mTLS in our cluster and automatic sidecar injection into pods so they are now part of the mesh.
