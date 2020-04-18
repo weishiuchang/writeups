@@ -1,6 +1,6 @@
 This documents my trials and tribulations with learning [Istio 1.5](https://istio.io)
 
-I decided to figure out what is this Istio mesh that everyone's talking about. Coming from a background of bastic Kubernetes with Traefik as the Ingress controller I will be trying to relate all the new resources and mesh terms with my existing understanding of data flows, so this write-up will have sprinklings of (hopefully) eureka notes and "oh that's what it gives me."
+I decided to figure out what is this Istio mesh that everyone's talking about. Coming from a background of basic Kubernetes with Traefik as the Ingress controller I will be trying to relate all the new resources and mesh terms with my existing understanding of data flows, so this write-up will have sprinklings of (hopefully) eureka notes and "oh that's what it gives me."
 
 # Sandbox
 
@@ -15,8 +15,8 @@ I decided to figure out what is this Istio mesh that everyone's talking about. C
 # k3d get-kubeconfig
 ```
 
-* I like [MetalLB](https://github.com/metallb/metallb), and it does lend a certain sense of realism and familiarity to what I should see for an on-prem installation, so with that flimsy logic I went ahead and disabled the deployment of the k3s built-in lb with '--no-deploy=servicelb'
-* Since I will be using Istio as the Ingress Controller, disabling the built-in Traefik is also just as straightforward with '--no-deploy=traefik'
+* I like [MetalLB](https://github.com/metallb/metallb), and it does lend a certain sense of realism and familiarity to what I should see for an on-prem installation, so with that flimsy logic I went ahead and disabled the deployment of the k3s built-in loadbalancer with '--no-deploy=servicelb'
+* Since I will be using Istio as the Ingress Controller, disabling the built-in [Traefik](https://github.com/containous/traefik) is also just as straightforward with '--no-deploy=traefik'
 
 ```bash
 # cat > ./metallb-values <<EOF
@@ -39,7 +39,6 @@ Istioctl can be downloaded from their docker image (I'm sure there are easier wa
 ```bash
 # docker create istio/istioctl:1.5.1
 # docker ps -a
-
 CONTAINER ID        IMAGE                      COMMAND                  CREATED             STATUS              PORTS                                                              NAMES
 f23bc253c2d8        istio/istioctl:1.5.1       "/usr/local/bin/isti…"   9 seconds ago       Created                                                                                eloquent_euler
 
@@ -57,7 +56,7 @@ NAMESPACE      NAME                        TYPE           CLUSTER-IP      EXTERN
 istio-system   istio-ingressgateway        LoadBalancer   10.43.229.84    172.18.100.0   15020:31477/TCP,80:...
 ```
 
-Looks like our [MetalLB](https://github.com/metallb/metallb) assigned `172.18.100.0` to this thing called `istio-ingressgateway`. Well that's a fair bet it's what we were looking for. **But**, it doesn't seem to respond on http:
+Looks like our [MetalLB](https://github.com/metallb/metallb) assigned `172.18.100.0` to this thing called `istio-ingressgateway`. Well that's a fair bet it's what we are looking for. **But**, it doesn't seem to respond on http:
 
 ```bash
 # curl -v http://localhost
@@ -74,7 +73,7 @@ Looks like our [MetalLB](https://github.com/metallb/metallb) assigned `172.18.10
 curl: (56) Recv failure: Connection reset by peer
 ```
 
-Well truthfully that's not that surprising actually as we haven't given it anything to forward to. So let's do what would have come naturally and create a service with an Ingress:
+Well yeah that's not surprising as we haven't given it anything to forward to. So let's do what we would have done with a basic Kubernetes cluster and create a Deployment and Service with an Ingress:
 
 ```bash
 # kubectl create deployment helloworld --image gcr.io/google-samples/hello-app:1.0
@@ -97,7 +96,7 @@ EOF
 # echo '172.18.100.0 helloworld.fireflyclass.com' >> /etc/hosts
 ```
 
-We created a Deployment using Google's simple webpage that just returns some plain text and listens on 8080. The Service exposes it as port 80 while the Ingress maps the hostname `helloworld.fireflyclass.com` to that backend Service. The `/etc/hosts` just gives us a pseudo-dns lookup for `helloworld.fireflyclass.com`
+We used Google's simple webpage that just returns some plain text and listens on 8080. The Service exposes it as port 80 while the Ingress maps the hostname `helloworld.fireflyclass.com` to that backend Service. The `/etc/hosts` just gives us a pseudo-dns lookup for `helloworld.fireflyclass.com`.
 
 ```bash
 # curl -v http://helloworld.fireflyclass.com
@@ -118,7 +117,7 @@ We created a Deployment using Google's simple webpage that just returns some pla
 * Connection #0 to host helloworld.fireflyclass.com left intact
 ```
 
-Hm. Well it certainly looks like Istio has done away with supporting Ingresses, so what is the "Istio-way" to expose a Service? It looks like they've created a couple of **C**ustom **R**esource **D**efinitions: Gateways and VirtualServices. So let's get rid of our Ingress and examine the Gateway that came deployed with Istio:
+Hm. Well it certainly looks like [Istio](https://istio.io/docs/) has done away with supporting Ingresses, so what is the "Istio-way" to expose a Service? It looks like they've created a couple of **C**ustom **R**esource **D**efinitions to replace Ingresss: Gateways and VirtualServices. So let's get rid of our Ingress and examine the Gateway that came deployed with Istio:
 
 ```bash
 # kubectl delete ingress helloworld
@@ -156,7 +155,7 @@ spec:
 
 `spec.servers.hosts` is currently set for splat hosts, so according to Istio docs on [gateways](https://istio.io/docs/reference/config/networking/gateway/) its purpose is to expose ports. Well it has done so on port 80. Now then, how do we associate Services with it?
 
-[VirtualServices](https://istio.io/docs/reference/config/networking/virtual-service/) appears to be the answer. I say *appears* because I keep coming across far richer content swirling around [DestinationRules](https://istio.io/docs/reference/config/networking/destination-rule/) and [ServiceEntry](https://istio.io/docs/reference/config/networking/service-entry/), which for someone like me who's just trying to associate what I knew of basic Kubernetes Ingress network flows with Mesh networking, does nothing but confuse the hell out of me. But hey, that's why I'm down this twisted path to untangle some of these technologies and document what I have learned.
+[VirtualServices](https://istio.io/docs/reference/config/networking/virtual-service/) appears to be the answer. I say *appears* because I keep coming across far richer content swirling around [DestinationRules](https://istio.io/docs/reference/config/networking/destination-rule/) and [ServiceEntry](https://istio.io/docs/reference/config/networking/service-entry/), which for someone like me who's just trying to associate what I knew of basic Kubernetes Ingress network flows with Mesh networking, does nothing but confuse the hell out of me. But hey, that's why I'm down this twisted path to untangle some of these technologies and document what I have learned. We do that by completely ignoring them. For now.
 
 So let's create a VirtualService for our helloworld Service:
 
@@ -209,7 +208,7 @@ Well after some googling it turns out that Gateway specifications in VirtualServ
 
 Speaking of implicit understandings - I have created the helloworld Deployment, Service, and VirtualService in the Default namespace.
 
-So let's try again, this time with feeling:
+So let's try again, this time with *feeling*:
 
 ```bash
 # curl http://helloworld.fireflyclass.com
@@ -224,7 +223,7 @@ Eureka! We have **at least** been able to expose a singular service! On insecure
 
 First things first, let's setup an HTTP**S** termination. This is important.
 
-Well actually, the *first* first thing is to create a couple of certs: A CA and a splat cert for `*.fireflyclass.com`
+Well actually, the *first* first thing is to create a couple of certs: CA and a splat cert for `*.fireflyclass.com`
 
 ```bash
 # cat > ca.conf <<EOF
@@ -396,7 +395,7 @@ To keep us from having to create numerous DestinationRules, an automatic mTLS se
 # istioctl manifest apply --set profile=demo --set values.global.mtls.auto=true --set values.global.mtls.enabled=false
 ```
 
-This enables mtls in the cluster, but with a default policy of `permissive`. Which should mean both cleartext and TLS protected communications to our helloworld Service are allowed. And according to Istio [FAQ](https://istio.io/faq/security/#verify-mtls-encryption), we can check for encrypted links with tcpdump. Well, I won't go that far with this write up, but I will toggle our mesh default policy to *STRICT* mode so we get denied communications from other pods not in our mesh network. Oh! I also learned that policies are [applied](https://www.arctiq.ca/our-blog/2020/3/12/authentication-policy-and-auto-mtls-in-istio-1-5/) at the mesh level, at the namespace level, at the pod level, and at the port level, with the more specific levels winning.
+This enables mTLS in the cluster, but with a default policy of `permissive`. Which should mean both cleartext and TLS protected communications to our helloworld Service are allowed. And according to Istio [FAQ](https://istio.io/faq/security/#verify-mtls-encryption), we can check for encrypted links with tcpdump. Well, I won't go that far with this write up, but I will toggle our mesh default policy to *STRICT* mode so we get denied communications from other pods not in our mesh network. Oh! I also learned that policies are [applied](https://www.arctiq.ca/our-blog/2020/3/12/authentication-policy-and-auto-mtls-in-istio-1-5/) at the mesh level, at the namespace level, at the pod level, and at the port level, with the more specific levels winning.
 
 ```bash
 # kubectl run curltest -it --rm --image infoblox/dnstools
@@ -450,3 +449,5 @@ Hostname: helloworld-695c77f7bd-wptgw
 ```
 
 Voilà! We have now enabled automatic mTLS in our cluster and automatic sidecar injection into pods so they are now part of the mesh.
+
+Important Note: Whilst setting everything to STRICT mTLS required *sounds* like a good thing, it isn't. Lots of [things](https://istio.io/faq/security/#mysql-with-mtls) break, like the most basic of things, such as [heartbeating and readiness](https://istio.io/faq/security/#k8s-health-checks) checks by kubelet.
