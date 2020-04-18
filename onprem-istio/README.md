@@ -4,9 +4,9 @@ I decided to figure out what is this Istio mesh that everyone's talking about. C
 
 # Sandbox
 
-* (k3d version v1.7.0)[https://github.com/rancher/k3d]
-* (k3s version v1.17.3-k3s1)[https://k3s.io]
-* (istio/istioctl version: 1.5.1)[https://istio.io]
+* [k3d version v1.7.0](https://github.com/rancher/k3d)
+* [k3s version v1.17.3-k3s1](https://k3s.io)
+* [istio/istioctl version: 1.5.1](https://istio.io)
 
 ## Install k3d with some storage allocated to local-path-provisioner
 
@@ -15,7 +15,7 @@ k3d create --volume localstore:/var/lib/rancher/k3s/storage --publish 443:443 --
 k3d get-kubeconfig
 ```
 
-* I like (MetalLB)[https://github.com/metallb/metallb], and it does lend a certain sense of realism and familiarity to what I should see for an on-prem installation, so with that flimsy logic I went ahead and disabled the deployment of the k3s built-in lb with '--no-deploy=servicelb'
+* I like [MetalLB](https://github.com/metallb/metallb), and it does lend a certain sense of realism and familiarity to what I should see for an on-prem installation, so with that flimsy logic I went ahead and disabled the deployment of the k3s built-in lb with '--no-deploy=servicelb'
 * Since I will be using Istio as the Ingress Controller, disabling the built-in Traefik is also just as straightforward with '--no-deploy=traefik'
 
 ```bash
@@ -58,7 +58,7 @@ NAMESPACE      NAME                        TYPE           CLUSTER-IP      EXTERN
 istio-system   istio-ingressgateway        LoadBalancer   10.43.229.84    172.18.100.0   15020:31477/TCP,80:...
 ```
 
-Looks like our (MetalLB)[https://github.com/metallb/metallb] assigned `172.18.100.0` to this thing called `istio-ingressgateway`. Well that's a fair bet it's what we were looking for. **But**, it doesn't seem to respond on http:
+Looks like our [MetalLB](https://github.com/metallb/metallb) assigned `172.18.100.0` to this thing called `istio-ingressgateway`. Well that's a fair bet it's what we were looking for. **But**, it doesn't seem to respond on http:
 
 ```bash
 curl -v http://localhost
@@ -158,9 +158,9 @@ spec:
       protocol: HTTP
 ```
 
-`spec.servers.hosts` is currently set for splat hosts, so according to Istio docs on (gateways)[https://istio.io/docs/reference/config/networking/gateway/] its purpose is to expose ports. Well it has done so on port 80. Now then, how do we associate Services with it?
+`spec.servers.hosts` is currently set for splat hosts, so according to Istio docs on [gateways](https://istio.io/docs/reference/config/networking/gateway/) its purpose is to expose ports. Well it has done so on port 80. Now then, how do we associate Services with it?
 
-(VirtualServices)[https://istio.io/docs/reference/config/networking/virtual-service/] appears to be the answer. I say *appears* because I keep coming across far richer content swirling around (DestinationRules)[https://istio.io/docs/reference/config/networking/destination-rule/] and (ServiceEntry)[https://istio.io/docs/reference/config/networking/service-entry/], which for someone like me who's just trying to associate what I knew of basic Kubernetes Ingress network flows with Mesh networking, does nothing but confuse the hell out of me. But hey, that's why I'm down this twisted path to untangle some of these technologies and document what I have learned.
+[VirtualServices](https://istio.io/docs/reference/config/networking/virtual-service/) appears to be the answer. I say *appears* because I keep coming across far richer content swirling around [DestinationRules](https://istio.io/docs/reference/config/networking/destination-rule/) and [ServiceEntry](https://istio.io/docs/reference/config/networking/service-entry/), which for someone like me who's just trying to associate what I knew of basic Kubernetes Ingress network flows with Mesh networking, does nothing but confuse the hell out of me. But hey, that's why I'm down this twisted path to untangle some of these technologies and document what I have learned.
 
 So let's create a VirtualService for our helloworld Service:
 
@@ -238,7 +238,7 @@ Version: 1.0.0
 Hostname: helloworld-7859b66cdf-v2wcc
 ```
 
-Success! We have **at least** been able to expose a singular service! On insecured http, using (VirtualService)[https://istio.io/docs/reference/config/networking/virtual-service/] instead of (Ingress)[https://kubernetes.io/docs/concepts/services-networking/ingress/], and without any of the (benefits)[https://istio.io/docs/reference/config/networking/sidecar/] of a mesh network. With this baseline we can now start to build upon what we know and begin pushing into the complexities of Istio.
+Success! We have **at least** been able to expose a singular service! On insecured http, using [VirtualService](https://istio.io/docs/reference/config/networking/virtual-service/) instead of [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/), and without any of the [benefits](https://istio.io/docs/reference/config/networking/sidecar/) of a mesh network. With this baseline we can now start to build upon what we know and begin pushing into the complexities of Istio.
 
 ## TLS
 
@@ -340,7 +340,7 @@ spec:
 EOF
 ```
 
-I have been reliably (told)[https://istio.io/docs/tasks/traffic-management/ingress/secure-ingress-sds/#configure-a-mutual-tls-ingress-gateway] that the cacert Secret must end in `-cacert`. Fair enough. Now let's modify our helloworld VirtualService to be accessible from our new TLS Gateway:
+I have been reliably [told](https://istio.io/docs/tasks/traffic-management/ingress/secure-ingress-sds/#configure-a-mutual-tls-ingress-gateway) that the cacert Secret must end in `-cacert`. Fair enough. Now let's modify our helloworld VirtualService to be accessible from our new TLS Gateway:
 
 ```bash
 kubectl apply -f - <<EOF
@@ -394,4 +394,4 @@ NAME                          READY   STATUS    RESTARTS   AGE
 helloworld-7859b66cdf-v2wcc   1/1     Running   0          100m
 ```
 
-Containers is 1 of 1. So since we can access our Service without Istio (sidecards)[https://istio.io/docs/reference/config/networking/sidecar/] that implies they actually serve some other purpose, perhaps related to (DestinationRules)[https://istio.io/docs/reference/config/networking/destination-rule/]?
+Containers is 1 of 1. So since we can access our Service without Istio [sidecards](https://istio.io/docs/reference/config/networking/sidecar/) that implies they actually serve some other purpose, perhaps related to [DestinationRules](https://istio.io/docs/reference/config/networking/destination-rule/)?
