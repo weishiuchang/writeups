@@ -453,9 +453,9 @@ Hostname: helloworld-695c77f7bd-wptgw
 
 Voilà! We have now enabled automatic mTLS in our cluster and automatic sidecar injection into pods so they are now part of the mesh.
 
-Important Note: Whilst setting everything to STRICT mTLS required *sounds* like a good thing, it isn't. Lots of [things](https://istio.io/faq/security/#mysql-with-mtls) break, like the most basic of things, such as [heartbeating and readiness](https://istio.io/faq/security/#k8s-health-checks) checks by kubelet.
+Important Note: Whilst setting everything to `STRICT` mTLS required *sounds* like a good thing, it isn't. Lots of [things](https://istio.io/faq/security/#mysql-with-mtls) break, like the most basic of things, such as [heartbeating and readiness](https://istio.io/faq/security/#k8s-health-checks) checks by kubelet. This makes `PERMISSIVE` mode or [global automatic Pod rewrite](https://istio.io/docs/ops/configuration/mesh/app-health-check/#probe-rewrite) a must.
 
-So what have I learned? For Pods to be part of the mesh they need to have sidecars attached them. Why be part of the mesh network? They get cool new superpowers like traffic splitting and mTLS. And lastly, Services can still be accessed via Gateways with or without Istio sidecars.
+So what have I learned? For Pods to be part of the mesh they need to have sidecars attached them. Why be part of the mesh network? They get cool new superpowers like traffic splitting and mTLS. And lastly, Services can still be accessed via Gateways with or without Istio sidecars. Sidecar injection is not global: You can inject it on a Deployment-by-Deployment basis or enable it at the Namespace level, which means you need to pay attention to ensure it gets added to access mesh Services.
 
 # What's next?
 
