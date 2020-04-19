@@ -96,7 +96,7 @@ EOF
 # echo '172.18.100.0 helloworld.fireflyclass.com' >> /etc/hosts
 ```
 
-We used Google's simple webpage that just returns some plain text and listens on 8080. The Service exposes it as port 80 while the Ingress maps the hostname `helloworld.fireflyclass.com` to that backend Service. The `/etc/hosts` just gives us a pseudo-dns lookup for `helloworld.fireflyclass.com`.
+We used Google's simple golang app that just prints "Hello, World!" on port 8080. The Service exposes the pod internally to the cluster on port 80 while the Ingress maps the hostname `helloworld.fireflyclass.com` to that backend Service. The addition to `/etc/hosts` just gives us a pseudo-dns lookup for `helloworld.fireflyclass.com`.
 
 ```bash
 # curl -v http://helloworld.fireflyclass.com
@@ -117,7 +117,7 @@ We used Google's simple webpage that just returns some plain text and listens on
 * Connection #0 to host helloworld.fireflyclass.com left intact
 ```
 
-Hm. Well it certainly looks like [Istio](https://istio.io/docs/) has done away with supporting Ingresses, so what is the "Istio-way" to expose a Service? It looks like they've created a couple of **C**ustom **R**esource **D**efinitions to replace Ingresss: Gateways and VirtualServices. So let's get rid of our Ingress and examine the Gateway that came deployed with Istio:
+Hm. Well it certainly looks like [Istio](https://istio.io/docs/) has done away with supporting Ingresses, so what is the "Istio-way" to expose a Service outside of the cluster? It looks like they've created a couple of **C**ustom **R**esource **D**efinitions to replace Ingresses: Gateways and VirtualServices. So let's get rid of our useless Ingress and examine the Gateway that came deployed with Istio:
 
 ```bash
 # kubectl delete ingress helloworld
@@ -153,9 +153,9 @@ spec:
       protocol: HTTP
 ```
 
-`spec.servers.hosts` is currently set for splat hosts, so according to Istio docs on [gateways](https://istio.io/docs/reference/config/networking/gateway/) its purpose is to expose ports. Well it has done so on port 80. Now then, how do we associate Services with it?
+`spec.servers.hosts` is currently set for "&ast;" hosts, so according to Istio docs on [gateways](https://istio.io/docs/reference/config/networking/gateway/) its purpose is to expose ports. Well it has done so on port 80. Now what? How do we tie Services to it?
 
-[VirtualServices](https://istio.io/docs/reference/config/networking/virtual-service/) appears to be the answer. I say *appears* because I keep coming across far richer content swirling around [DestinationRules](https://istio.io/docs/reference/config/networking/destination-rule/) and [ServiceEntry](https://istio.io/docs/reference/config/networking/service-entry/), which for someone like me who's just trying to associate what I knew of basic Kubernetes Ingress network flows with Mesh networking, does nothing but confuse the hell out of me. But hey, that's why I'm down this twisted path to untangle some of these technologies and document what I have learned. We do that by completely ignoring them. For now.
+[VirtualServices](https://istio.io/docs/reference/config/networking/virtual-service/) appears to be the answer. I say *appears* because I keep coming across far richer content swirling around [DestinationRules](https://istio.io/docs/reference/config/networking/destination-rule/) and [ServiceEntry](https://istio.io/docs/reference/config/networking/service-entry/), which for someone like me who's just trying to associate what I knew of Kubernetes Ingress network flows with Mesh networking, they do nothing but confuse the hell out of me. But hey, that's why I'm down this twisted path to untangle some of these technologies and document what I have learned. We do that by completely ignoring them. For now.
 
 So let's create a VirtualService for our helloworld Service:
 
@@ -200,7 +200,7 @@ EOF
 * Connection #0 to host helloworld.fireflyclass.com left intact
 ```
 
-Well after some googling it turns out that Gateway specifications in VirtualServices need to be namespace qualified! Make sense, but certainly a divergence from the singleton world of traditional Kubernetes Ingress Controllers:
+Well after some googling it turns out that Gateway specifications in VirtualServices need to be namespace qualified! Make sense, but certainly a divergence from the singleton world of Kubernetes Ingress Controllers:
 
 ```bash
 # kubectl patch virtualservice helloworld --type merge -p $'{"spec":{"gateways":["istio-system/ingressgateway"]}}'
@@ -208,7 +208,7 @@ Well after some googling it turns out that Gateway specifications in VirtualServ
 
 Speaking of implicit understandings - I have created the helloworld Deployment, Service, and VirtualService in the Default namespace.
 
-So let's try again, this time with *feeling*:
+So let's try again, this time *with feeling*:
 
 ```bash
 # curl http://helloworld.fireflyclass.com
@@ -283,11 +283,12 @@ EOF
 # openssl req -newkey rsa:2048 -config ./fireflyclass.conf -extensions v3_req -nodes -keyout ./fireflyclass.key -out ./fireflyclass.csr
 ```
 
+Aaaand sign the cert.
 ```bash
 # openssl x509 -req -in ./fireflyclass.csr -CA ./ca.crt -CAkey ./ca.key -CAcreateserial -out ./fireflyclass.crt -days 3650 -sha256 -extensions v3_req -extfile ./fireflyclass.conf
 ```
 
-And apparently to setup a TLS Ingress, it is as simple as setting up another Gateway:
+To setup a TLS Ingress, it is as easy as just adding another Gateway:
 
 ```bash
 # kubectl create -n istio-system secret generic fireflyclass-credential --from-file=cert=./fireflyclass.crt --from-file=key=./fireflyclass.key
@@ -360,6 +361,8 @@ Hostname: helloworld-7859b66cdf-v2wcc
 
 Wonderful! We have a TLS Ingress replacement of our Traefik Controller! It's now cemented in our minds that VirtualService == Ingress.
 
+So what have I learned? Gateways control ports and TLS access into the Kubernetes cluster. VirtualServices? They replace the old Ingress resource by associating backend Services with N-number of Gateways while opening up the ability to add in DestinationRules later on for blue-greens/canary/rollout strategies.
+
 # Sidecars
 
 Now here's something interesting. We don't have [sidecars](https://istio.io/docs/reference/config/networking/sidecar/) in our helloworld pods.
@@ -370,7 +373,7 @@ NAME                          READY   STATUS    RESTARTS   AGE
 helloworld-7859b66cdf-v2wcc   1/1     Running   0          100m
 ```
 
-Containers is 1 of 1. According to Istio docs this means that service is not part of the mesh network. **But!** It is still reachable! That's good, that allows us an avenue for migrating services into the cluster and more importantly a fall back if we absolutely must get the Service out of the mesh and working right away as part of troubleshooting.
+Containers is 1 of 1. According to Istio docs this means that service is not part of the mesh network. **But!** It is still reachable! That's good, that allows us an avenue for migrating services into the cluster and more importantly a get-out-of-jail/mesh-card if we absolutely must make Service work as part of troubleshooting.
 
 This was a *eureka* moment for me. I wondered why have a sidecar if Services still work with Gateways and VirtualServices, and it is because the sidecar allows us to now apply rules and policies like mTLS, traffic shaping, etc.
 
@@ -387,15 +390,15 @@ The important bit here is the 2 of 2 containers in the pod, one of which is the 
 
 # mTLS
 
-Of all the features afforded by Istio mesh, what interest me next is the [auto mutual TLS feature](https://istio.io/pt-br/docs/tasks/security/authentication/auto-mtls/) for all sidecar-services. This seems like a natural extension of the TLS Ingress Gateway from earlier as it essentally turns all TCP connections between every Service into encrypted links.
-
-To keep us from having to create numerous DestinationRules, an automatic mTLS setting at the Istio level can create it all for us behind the scenes:
+Interestingly, the [auto mutual TLS feature](https://istio.io/pt-br/docs/tasks/security/authentication/auto-mtls/) turns intra-cluster TCP connections into encrypted links, but only for Services with sidecar-pods. To keep us from having to create numerous DestinationRules, an automatic mTLS setting at the Istio level can create it all for us behind the scenes:
 
 ```bash
 # istioctl manifest apply --set profile=demo --set values.global.mtls.auto=true --set values.global.mtls.enabled=false
 ```
 
-This enables mTLS in the cluster, but with a default policy of `permissive`. Which should mean both cleartext and TLS protected communications to our helloworld Service are allowed. And according to Istio [FAQ](https://istio.io/faq/security/#verify-mtls-encryption), we can check for encrypted links with tcpdump. Well, I won't go that far with this write up, but I will toggle our mesh default policy to *STRICT* mode so we get denied communications from other pods not in our mesh network. Oh! I also learned that policies are [applied](https://www.arctiq.ca/our-blog/2020/3/12/authentication-policy-and-auto-mtls-in-istio-1-5/) at the mesh level, at the namespace level, at the pod level, and at the port level, with the more specific levels winning.
+This enables mTLS in the cluster, but with a default policy of `permissive`. I had no idea what that meant, but through lots of reading I think I have come to the sense that it means: Services with sidecars can be accessed by both Pods with **and** without Istio sidecars, and if set to `STRICT` then Services with sidecars can **only** be accessed by other Pods with Istio sidecars. What about extra-cluster accesses through the Gateway, like Chrome Browsers trying to access our venerable helloworld app? Well it looks like they're fine, they can access associated VirtualServices no matter the policy setting.
+
+According to Istio [FAQ](https://istio.io/faq/security/#verify-mtls-encryption), we can check for encrypted links with tcpdump. Well, I won't go that far with this write up, but I will toggle our mesh default policy to *STRICT* mode so we get denied communications from other pods not in our mesh network. Oh! I also learned that Isito 1.5 policies are [applied](https://www.arctiq.ca/our-blog/2020/3/12/authentication-policy-and-auto-mtls-in-istio-1-5/) at the mesh level, at the namespace level, at the pod level, and at the port level, with the more specific levels winning.
 
 ```bash
 # kubectl run curltest -it --rm --image infoblox/dnstools
@@ -405,7 +408,7 @@ Version: 1.0.0
 Hostname: helloworld-695c77f7bd-wptgw
 ```
 
-We can see that curl still works. Let's break it by setting a **STRICT** mTLS PeerAuthentication policy:
+We can see that curl still works. Let's break it by setting a **STRICT** mTLS PeerAuthentication policy on the Default namespace:
 
 ```bash
 # kubectl apply -f - <<EOF
@@ -437,7 +440,7 @@ Version: 1.0.0
 Hostname: helloworld-695c77f7bd-wptgw
 ```
 
-So now, how do we make sure our debugging pod gets an automatic sidecar? Apparently, by labeling our Default namespace with `istio-injection=enabled`:
+Good. So now, how do we give our debugging pod an Istio sidecar? Apparently, by labeling our namespace with `istio-injection=enabled`:
 
 ```bash
 # kubectl label namespace default istio-injection=enabled
@@ -451,3 +454,5 @@ Hostname: helloworld-695c77f7bd-wptgw
 Voilà! We have now enabled automatic mTLS in our cluster and automatic sidecar injection into pods so they are now part of the mesh.
 
 Important Note: Whilst setting everything to STRICT mTLS required *sounds* like a good thing, it isn't. Lots of [things](https://istio.io/faq/security/#mysql-with-mtls) break, like the most basic of things, such as [heartbeating and readiness](https://istio.io/faq/security/#k8s-health-checks) checks by kubelet.
+
+So what have I learned? For Pods to be part of the mesh they need to have sidecars attached them. Why be part of the mesh network? They get cool new superpowers like traffic splitting and mTLS. And lastly, Services can still be accessed via Gateways with or without Istio sidecars.
