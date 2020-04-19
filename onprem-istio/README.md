@@ -456,3 +456,8 @@ Voilà! We have now enabled automatic mTLS in our cluster and automatic sidecar 
 Important Note: Whilst setting everything to STRICT mTLS required *sounds* like a good thing, it isn't. Lots of [things](https://istio.io/faq/security/#mysql-with-mtls) break, like the most basic of things, such as [heartbeating and readiness](https://istio.io/faq/security/#k8s-health-checks) checks by kubelet.
 
 So what have I learned? For Pods to be part of the mesh they need to have sidecars attached them. Why be part of the mesh network? They get cool new superpowers like traffic splitting and mTLS. And lastly, Services can still be accessed via Gateways with or without Istio sidecars.
+
+# What's next?
+
+* Deployment Strategy with DestinationRule
+* JWT Authentication with reverse oauth proxies
