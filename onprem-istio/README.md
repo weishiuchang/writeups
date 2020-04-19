@@ -19,7 +19,7 @@ I decided to figure out what is this Istio mesh that everyone's talking about. C
 * Since I will be using Istio as the Ingress Controller, disabling the built-in [Traefik](https://github.com/containous/traefik) is also just as straightforward with '--no-deploy=traefik'
 
 ```bash
-# cat > ./metallb-values <<EOF
+# cat > ./metallb-values.yaml <<EOF
 configInline:
   address-pools:
     - name: dynamic
@@ -388,7 +388,7 @@ helloworld-695c77f7bd-wptgw   2/2     Running   0          32s
 
 The important bit here is the 2 of 2 containers in the pod, one of which is the injected sidecar from Istio.
 
-# mTLS
+## mTLS
 
 Interestingly, the [auto mutual TLS feature](https://istio.io/pt-br/docs/tasks/security/authentication/auto-mtls/) turns intra-cluster TCP connections into encrypted links, but only for Services with sidecar-pods. To keep us from having to create numerous DestinationRules, an automatic mTLS setting at the Istio level can create it all for us behind the scenes:
 
@@ -459,5 +459,6 @@ So what have I learned? For Pods to be part of the mesh they need to have sideca
 
 # What's next?
 
+* Add demo dashboard into existing Grafana
 * Deployment Strategy with DestinationRule
 * JWT Authentication with reverse oauth proxies
