@@ -459,13 +459,14 @@ So what have I learned? For Pods to be part of the mesh they need to have sideca
 
 # Deployment Strategies with DestinationRules
 
-Lets look at DestinationRules and how we can use it with [canary deployments](https://kubernetes.io/docs/concepts/cluster-administration/manage-deployment/#canary-deployments). But we have to do a couple of house cleaning tasks first.
+Let's look at [DestinationRules](https://istio.io/docs/reference/config/networking/destination-rule/) and how we can use it with [canary deployments](https://kubernetes.io/docs/concepts/cluster-administration/manage-deployment/#canary-deployments).
 
 We're going to go back to the sidecar-less Deployment so we can further define what it is that the Istio sidecars do for us, and we're going to deploy both version 1.0 and 2.0 of helloworld:
 
 ```bash
 # kubectl label namespace default istio-injection-
 # kubectl delete deployment helloworld
+# kubectl delete service helloworld
 # kubectl delete virtualservice helloworld
 # kubectl apply -f - <<EOF
 ---
@@ -529,9 +530,9 @@ spec:
 EOF
 ```
 
-You can see each Pod now gets an additional `ver: "1.0"` and `ver: "2.0"` label. DestinationRules will be using those to filter which Pods will get traffic.
+You can see each Pod now gets an additional `ver: "1.0"` and `ver: "2.0"` label, which will be used by DestinationRules to filter which Pods will get traffic.
 
-Next we add a VirtualService with a DestinationRule that routes 90% of the user traffic to `ver: "1.0"` Pods and 10% to `ver: "2.0"` Pods. Kubernetes doesn't let us do that directly with network traffic, but Istio does.
+Next we add a VirtualService with weights that route 90% of the user traffic to the `ver: "1.0"` Pod and 10% to the `ver: "2.0"` Pod. Kubernetes doesn't let us do that directly with network traffic, but Istio does.
 
 ```bash
 # kubectl apply -f - <<EOF
@@ -592,7 +593,7 @@ Here you can see we've placed a weight of 90 on subset "v1" in the VirtualServic
 * Connection #0 to host helloworld.fireflyclass.com left intact
 ```
 
-Wait... Why are we getting a *503 Service Unavailable*? Let us examine our network flow closer.
+Wait. Why are we getting a `503 Service Unavailable`? Let us examine our network flow closer.
 
 The HTTP request comes in from curl into the Gateway, which is configured to listen on port 80 for "&ast;" hosts. Well that's been working so that can't be the problem. What about the VirtualService?
 
@@ -604,14 +605,14 @@ spec:
   - istio-system/ingressgateway
 ```
 
-That looks right, the `hosts` specification matches what the curl command is requesting and the Gateway is property namespaced. What about the DestinationRule?
+That looks right; The `hosts` specification matches what the curl command is requesting and the Gateway is property namespaced. What about the DestinationRule?
 
 ```yaml
 spec:
   host: helloworld.fireflyclass.com
 ```
 
-Oh wait, **what if the host specification in the DestinationRule is meant to be the backend Service name?** Let's try it:
+Oh wait... **What if the host specification in the DestinationRule is meant to be the backend Service name?** Let's try it:
 
 ```yaml
 spec:
@@ -625,7 +626,7 @@ Version: 1.0.0
 Hostname: helloworld-v1-69fdf5bcf9-77zp2
 ```
 
-*Eureka*! That was the problem. I had presumed that the `host` specification in the DestinationRule should match the same in VirtualService. [Apparently](https://istio.io/docs/reference/config/networking/destination-rule/#DestinationRule) while the `host` specification in the VirtualService needs to match what the user is requesting, the DestinationRule `host` specification must match the backend Service. This fits with the description that VirtualServices defines what to do when an external host is requested and DestinationRules defines what is done when an internal host is accessed. Clever.
+*Eureka*! That was the problem. I had presumed that the `host` specification in the DestinationRule should match the same in VirtualService. [Apparently](https://istio.io/docs/reference/config/networking/destination-rule/#DestinationRule) while the `host` specification in the VirtualService needs to match what the user is requesting, the DestinationRule `host` specification must instead match the backend Service. This fits with the description that VirtualServices defines what to do when an *external* host is requested and DestinationRules defines what is done when an *internal* host is accessed. Clever.
 
 One more thing, let's do a crude test to see if we get the distribution we expect from our 90-10 network division:
 
@@ -645,7 +646,9 @@ Version: 1.0.0
 
 Nice! Though this is by no means a real test, it still gives me the warm fuzzies that traffic is at least biased toward the heavily weighted version 1.0 of our helloworld application.
 
-So what have we learned? We now know that VirtualServices matches on the external hostname in the request to decide what to do with traffic, DestinationRules matches on the internal Service hostname to decide what to do with traffic, and the two work together with label selectors to distribute network flows to Pods. We *also* learned that an Istio sidecar is **not** needed for DestinationRules! That is also a surprise as well, as it further pulls us down the rabbit hole on trying to define why we would deploy sidecars beyond mTLS.
+So what have we learned?
+* We now know that VirtualServices matches on the external hostname in the request to decide what to do with traffic, DestinationRules matches on the internal Service hostname to decide what to do with traffic, and the two work together with label selectors to distribute network flows to Pods
+* We *also* learned that an Istio sidecar is **not** needed for DestinationRules! That is a surprise as well as it further pulls us down the rabbit hole on trying to define why we would deploy sidecars beyond mTLS
 
 # What's next?
 
