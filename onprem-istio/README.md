@@ -390,9 +390,10 @@ The important bit here is the 2 of 2 containers in the pod, one of which is the 
 
 ## mTLS
 
-Interestingly, the [auto mutual TLS feature](https://istio.io/pt-br/docs/tasks/security/authentication/auto-mtls/) turns intra-cluster TCP connections into encrypted links, but only for Services with sidecar-pods. To keep us from having to create numerous DestinationRules, an automatic mTLS setting at the Istio level can create it all for us behind the scenes:
+Interestingly, the [auto mutual TLS feature](https://istio.io/pt-br/docs/tasks/security/authentication/auto-mtls/) turns intra-cluster TCP connections into encrypted links, but only for Services with sidecar-pods. To keep us from having to create numerous DestinationRules, an automatic mTLS setting at the Istio level can create it all for us behind the scenes.
 
 ```bash
+# This is already the default in Istio 1.5.1
 # istioctl manifest apply --set profile=demo --set values.global.mtls.auto=true --set values.global.mtls.enabled=false
 ```
 
@@ -653,6 +654,7 @@ So what have we learned?
 # What's next?
 
 * JWT Authentication with reverse oauth proxies
+* ServiceEntries and Egress Gateways
 
 # Additional References
 
